@@ -365,6 +365,18 @@ tr_values = st.sidebar.multiselect(
 if not tr_values:
     tr_values = DEFAULT_TRS
 
+# Creditos
+st.sidebar.divider()
+st.sidebar.markdown(
+    "**Desenvolvido por**\n\n"
+    "Vinicius de Azevedo Silva\n\n"
+    "Eng. Civil | Doutorando em Recursos Hidricos\n"
+    "FEC/Unicamp\n\n"
+    "[GitHub](https://github.com/viniciusazeved) · "
+    "[Repositorio](https://github.com/viniciusazeved/idf-generator)",
+    unsafe_allow_html=False,
+)
+
 
 # ---------------------------------------------------------------------------
 # Logica de carregamento
