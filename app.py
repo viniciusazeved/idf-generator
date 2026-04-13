@@ -370,7 +370,7 @@ st.sidebar.divider()
 st.sidebar.markdown(
     "**Desenvolvido por**\n\n"
     "Vinicius de Azevedo Silva\n\n"
-    "Engenheiro Ambiental\n"
+    "Engenheiro Ambiental,\n"
     "Doutorando em Recursos Hidricos,\n"
     "Energeticos e Ambientais\n"
     "FECFAU / Unicamp\n\n"
