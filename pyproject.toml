@@ -1,0 +1,13 @@
+[project]
+name = "idf-generator"
+version = "0.1.0"
+description = "Gerador de Curvas IDF a partir de dados pluviometricos da ANA"
+requires-python = ">=3.11"
+dependencies = [
+    "streamlit>=1.40",
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "requests>=2.31",
+    "scipy>=1.11",
+    "plotly>=5.18",
+]
