@@ -32,7 +32,9 @@ from plots import (
     plot_idf_curves,
     plot_qq,
 )
+from map_view import compute_quality_score, create_station_map, resolve_clicked_station
 from stations import get_cities, get_states, get_stations, load_catalog
+from streamlit_folium import st_folium
 
 # ---------------------------------------------------------------------------
 # Config
@@ -322,40 +324,47 @@ def _download_precipitation(station_code: str) -> pd.Series:
 # ---------------------------------------------------------------------------
 # Sidebar
 # ---------------------------------------------------------------------------
+_logo_col1, _logo_col2, _logo_col3 = st.sidebar.columns([1, 2, 1])
+with _logo_col2:
+    st.image("logo_lapla.png", width=120)
 st.sidebar.title("Gerador de Curvas IDF")
 
 # 1. Selecao de estacao
 st.sidebar.header("1. Selecao de Estacao")
 
 catalog = load_catalog()
-states = get_states(catalog)
 
-selected_state = st.sidebar.selectbox("Estado", states, index=None, placeholder="Selecione...")
+min_years = st.sidebar.slider("Anos minimos de dados", min_value=0, max_value=30, value=10, step=5)
 
-selected_city = None
 selected_station_row = None
+load_btn = False
 
-if selected_state:
-    cities = get_cities(catalog, selected_state)
-    selected_city = st.sidebar.selectbox("Cidade", cities, index=None, placeholder="Selecione...")
+with st.sidebar.expander("Busca por Estado/Cidade"):
+    states = get_states(catalog)
+    selected_state = st.selectbox("Estado", states, index=None, placeholder="Selecione...")
 
-if selected_city:
-    stations_df = get_stations(catalog, selected_state, selected_city)
-    station_options = {
-        f"{row['Code']} - {row['Name']} ({row.get('NYD', '?')} anos)": row["Code"]
-        for _, row in stations_df.iterrows()
-    }
-    selected_label = st.sidebar.selectbox(
-        "Estacao",
-        list(station_options.keys()),
-        index=None,
-        placeholder="Selecione...",
-    )
-    if selected_label:
-        selected_code = station_options[selected_label]
-        selected_station_row = stations_df[stations_df["Code"] == selected_code].iloc[0]
+    selected_city = None
+    if selected_state:
+        cities = get_cities(catalog, selected_state)
+        selected_city = st.selectbox("Cidade", cities, index=None, placeholder="Selecione...")
 
-load_btn = st.sidebar.button("Carregar Dados", type="primary", disabled=selected_station_row is None)
+    if selected_city:
+        stations_df = get_stations(catalog, selected_state, selected_city)
+        station_options = {
+            f"{row['Code']} - {row['Name']} ({row.get('NYD', '?')} anos)": row["Code"]
+            for _, row in stations_df.iterrows()
+        }
+        selected_label = st.selectbox(
+            "Estacao",
+            list(station_options.keys()),
+            index=None,
+            placeholder="Selecione...",
+        )
+        if selected_label:
+            selected_code = station_options[selected_label]
+            selected_station_row = stations_df[stations_df["Code"] == selected_code].iloc[0]
+
+    load_btn = st.button("Carregar Dados", type="primary", disabled=selected_station_row is None)
 
 # 2. Configuracao
 st.sidebar.header("2. Configuracao")
@@ -379,29 +388,25 @@ if not tr_values:
 
 # Creditos
 st.sidebar.divider()
-st.sidebar.markdown(
-    "**Desenvolvido por**\n\n"
-    "Vinicius de Azevedo Silva\n\n"
-    "Engenheiro Ambiental,\n"
-    "Doutorando em Recursos Hidricos,\n"
-    "Energeticos e Ambientais\n"
+st.sidebar.caption(
+    "**LAPLA** - Laboratorio de Planejamento Ambiental\n\n"
     "FECFAU / Unicamp\n\n"
-    "[GitHub](https://github.com/viniciusazeved) · "
     "[Repositorio](https://github.com/viniciusazeved/idf-generator)",
-    unsafe_allow_html=False,
 )
 
 
 # ---------------------------------------------------------------------------
-# Logica de carregamento
+# Logica de carregamento (dropdown)
 # ---------------------------------------------------------------------------
 if load_btn and selected_station_row is not None:
     st.session_state["station_code"] = selected_station_row["Code"]
     st.session_state["station_name"] = selected_station_row["Name"]
     st.session_state["station_row"] = selected_station_row
+    st.session_state.pop("map_selected_station", None)
     try:
         data = _download_precipitation(selected_station_row["Code"])
         st.session_state["precipitation_data"] = data
+        st.rerun()
     except ANAConnectionError as e:
         st.error(f"Erro de conexao com a ANA: {e}")
         st.stop()
@@ -415,19 +420,62 @@ if load_btn and selected_station_row is not None:
 # ---------------------------------------------------------------------------
 if "precipitation_data" not in st.session_state:
     st.title("Gerador de Curvas IDF")
-    tab_home, tab_metodo = st.tabs(["Inicio", "Metodologia"])
-    with tab_home:
-        st.markdown(
-            "Selecione uma estacao pluviometrica no menu lateral e clique em "
-            "**Carregar Dados** para comecar."
-        )
-        st.info(
-            "Este app gera curvas IDF (Intensidade-Duracao-Frequencia) a partir de dados "
-            "historicos de precipitacao da ANA, usando desagregacao DNAEE e "
-            "ajuste estatistico (Gumbel ou GEV)."
-        )
+    tab_mapa, tab_metodo = st.tabs(["Mapa de Estacoes", "Metodologia"])
+
     with tab_metodo:
         _render_methodology()
+
+    with tab_mapa:
+        st.markdown(
+            "Clique em uma estacao no mapa para seleciona-la, "
+            "ou use a **Busca por Estado/Cidade** no menu lateral."
+        )
+
+        scored_catalog = compute_quality_score(catalog)
+        station_map = create_station_map(scored_catalog, min_years, len(scored_catalog))
+
+        map_data = st_folium(
+            station_map,
+            height=550,
+            width=None,
+            returned_objects=[],
+        )
+
+        # Resolver clique no mapa
+        if map_data and map_data.get("last_object_clicked"):
+            clicked = map_data["last_object_clicked"]
+            station = resolve_clicked_station(scored_catalog, clicked)
+            if station is not None:
+                prev = st.session_state.get("map_selected_station")
+                if prev is None or prev.get("Code") != station.get("Code"):
+                    st.session_state["map_selected_station"] = station
+
+        # Card de confirmacao
+        if "map_selected_station" in st.session_state:
+            sel = st.session_state["map_selected_station"]
+
+            st.success(f"Estacao selecionada: **{sel['Code']} - {sel['Name']}**")
+
+            info_cols = st.columns(4)
+            info_cols[0].metric("Cidade", sel.get("City", "?"))
+            info_cols[1].metric("Anos de dados", sel.get("NYD", "?"))
+            info_cols[2].metric("Falhas", f"{sel.get('MD', '?')}%")
+            info_cols[3].metric("Qualidade", sel.get("quality_label", "?"))
+
+            if st.button("Analisar Estacao", type="primary"):
+                st.session_state["station_code"] = sel["Code"]
+                st.session_state["station_name"] = sel["Name"]
+                st.session_state["station_row"] = sel
+                try:
+                    data = _download_precipitation(sel["Code"])
+                    st.session_state["precipitation_data"] = data
+                    del st.session_state["map_selected_station"]
+                    st.rerun()
+                except ANAConnectionError as e:
+                    st.error(f"Erro de conexao com a ANA: {e}")
+                except ValueError as e:
+                    st.warning(str(e))
+
     st.stop()
 
 
@@ -436,6 +484,12 @@ series = st.session_state["precipitation_data"]
 station_name = st.session_state["station_name"]
 station_code = st.session_state["station_code"]
 station_row = st.session_state["station_row"]
+
+# Botao para voltar ao mapa
+if st.sidebar.button("Nova Estacao"):
+    for key in ["station_code", "station_name", "station_row", "precipitation_data"]:
+        st.session_state.pop(key, None)
+    st.rerun()
 
 st.title(f"Curvas IDF - {station_name}")
 
