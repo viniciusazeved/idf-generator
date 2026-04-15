@@ -348,7 +348,7 @@ def _download_precipitation(station_code: str) -> pd.Series:
 # ---------------------------------------------------------------------------
 _logo_col1, _logo_col2, _logo_col3 = st.sidebar.columns([1, 2, 1])
 with _logo_col2:
-    st.image("logo_lapla.png", width=120)
+    st.image("logo_lapla.png", width=160)
 st.sidebar.title("Gerador de Curvas IDF")
 
 # 1. Selecao de estacao
@@ -467,29 +467,33 @@ if "precipitation_data" not in st.session_state:
         )
 
         scored_catalog = compute_quality_score(catalog)
-        station_map = create_station_map(scored_catalog, min_years, len(scored_catalog))
 
-        map_data = st_folium(
-            station_map,
-            key="station_map",
-            height=550,
-            use_container_width=True,
-            returned_objects=["last_object_clicked"],
-        )
-
-        # Resolver clique no mapa (so processar clicks novos)
-        if map_data and map_data.get("last_object_clicked"):
-            click_coords = (
-                map_data["last_object_clicked"].get("lat"),
-                map_data["last_object_clicked"].get("lng"),
+        @st.fragment
+        def _render_map():
+            station_map = create_station_map(scored_catalog, min_years, len(scored_catalog))
+            map_data = st_folium(
+                station_map,
+                key="station_map",
+                height=550,
+                use_container_width=True,
+                returned_objects=["last_object_clicked"],
             )
-            if click_coords != st.session_state.get("_last_click_coords"):
-                st.session_state["_last_click_coords"] = click_coords
-                station = resolve_clicked_station(scored_catalog, map_data["last_object_clicked"])
-                if station is not None:
-                    st.session_state["map_selected_station"] = station
+            # Resolver clique (so clicks novos)
+            if map_data and map_data.get("last_object_clicked"):
+                click_coords = (
+                    map_data["last_object_clicked"].get("lat"),
+                    map_data["last_object_clicked"].get("lng"),
+                )
+                if click_coords != st.session_state.get("_last_click_coords"):
+                    st.session_state["_last_click_coords"] = click_coords
+                    station = resolve_clicked_station(scored_catalog, map_data["last_object_clicked"])
+                    if station is not None:
+                        st.session_state["map_selected_station"] = station
+                        st.rerun(scope="app")
 
-        # Card de confirmacao
+        _render_map()
+
+        # Card de confirmacao (fora do fragment — estavel)
         if "map_selected_station" in st.session_state:
             sel = st.session_state["map_selected_station"]
 
