@@ -35,7 +35,7 @@ from plots import (
 from map_view import compute_quality_score, create_station_map, resolve_clicked_station
 from report import generate_pdf
 from stations import get_cities, get_states, get_stations, load_catalog
-from streamlit_folium import folium_static
+import pydeck as pdk
 
 # ---------------------------------------------------------------------------
 # Config
@@ -348,7 +348,7 @@ def _download_precipitation(station_code: str) -> pd.Series:
 # ---------------------------------------------------------------------------
 _logo_col1, _logo_col2, _logo_col3 = st.sidebar.columns([1, 2, 1])
 with _logo_col2:
-    st.image("logo_lapla.png", width=160)
+    st.image("logo_lapla.png", width=215)
 st.sidebar.title("Gerador de Curvas IDF")
 
 # 1. Selecao de estacao
@@ -463,9 +463,40 @@ if "precipitation_data" not in st.session_state:
     with tab_mapa:
         scored_catalog = compute_quality_score(catalog)
 
-        # Mapa estatico (interativo no browser, sem reruns no Streamlit)
-        station_map = create_station_map(scored_catalog, min_years, len(scored_catalog))
-        folium_static(station_map, height=550, width=1100)
+        # Filtrar estacoes para o mapa
+        map_df = scored_catalog.dropna(subset=["Latitude", "Longitude"]).copy()
+        if min_years > 0:
+            map_df = map_df[map_df["NYD"].fillna(0) >= min_years]
+
+        # Converter cor hex para RGB
+        def _hex_to_rgb(h: str) -> list[int]:
+            h = h.lstrip("#")
+            return [int(h[i:i+2], 16) for i in (0, 2, 4)]
+
+        _q_colors = {"Excelente": "#2ca02c", "Moderada": "#ff7f0e", "Limitada": "#d62728"}
+        map_df["color"] = map_df["quality_label"].astype(str).map(
+            lambda q: _hex_to_rgb(_q_colors.get(q, "#d62728"))
+        )
+
+        # Mapa pydeck (WebGL, nativo do Streamlit, leve)
+        layer = pdk.Layer(
+            "ScatterplotLayer",
+            data=map_df,
+            get_position=["Longitude", "Latitude"],
+            get_color="color",
+            get_radius=4000,
+            radius_min_pixels=3,
+            radius_max_pixels=8,
+            pickable=True,
+        )
+        view = pdk.ViewState(latitude=-14.2, longitude=-51.9, zoom=3.5, pitch=0)
+        deck = pdk.Deck(
+            layers=[layer],
+            initial_view_state=view,
+            tooltip={"text": "{Code} - {Name}\n{City}, {State}\nAnos: {NYD} | Falhas: {MD}%\nQualidade: {quality_label}"},
+            map_style="light",
+        )
+        st.pydeck_chart(deck, use_container_width=True, height=550)
 
         st.markdown("**Selecione a estacao** pelo nome, codigo ou cidade:")
 
