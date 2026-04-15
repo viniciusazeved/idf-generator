@@ -110,13 +110,37 @@ O app oferece duas opcoes de agrupamento anual:
   periodo.
     """)
 
-    # --- 3. Distribuicao de Gumbel ---
-    st.subheader("3. Distribuicao de Gumbel (Tipo I - Maximos)")
-    st.markdown("""
-A distribuicao de Gumbel para maximos (tambem chamada de distribuicao de
-valores extremos Tipo I) e a mais utilizada em hidrologia para modelar
-precipitacoes maximas anuais. Sua funcao de densidade de probabilidade
-(PDF) e:
+    # --- 3. Familia GEV ---
+    st.subheader("3. A familia de distribuicoes de valores extremos")
+    st.markdown(r"""
+A teoria estatistica de valores extremos estabelece que, independentemente
+da distribuicao original dos dados, os maximos de amostras suficientemente
+grandes convergem para uma unica familia de distribuicoes: a **GEV
+(Generalized Extreme Value)**. Essa familia e definida por tres parametros
+e engloba tres casos particulares, historicamente chamados de Tipo I,
+Tipo II e Tipo III:
+
+| Caso particular | Nome | Parametro de forma | Comportamento da cauda |
+|:---:|:---:|:---:|:---|
+| Tipo I | **Gumbel** | $\xi = 0$ | Cauda exponencial — decai rapido, sem limite superior |
+| Tipo II | **Frechet** | $\xi > 0$ | Cauda pesada — eventos extremos sao mais provaveis |
+| Tipo III | **Weibull** | $\xi < 0$ | Cauda limitada — existe um teto maximo fisico |
+
+Nesta ferramenta, o usuario pode escolher entre ajustar a **Gumbel**
+(modelo classico, mais simples) ou a **GEV completa** (modelo flexivel,
+que deixa os dados decidirem qual tipo se aplica).
+    """)
+
+    # --- 3.1 Gumbel ---
+    st.subheader("3.1 Gumbel (Tipo I - Maximos)")
+    st.markdown(r"""
+A distribuicao de Gumbel e o caso mais tradicional em hidrologia
+brasileira, amplamente adotada em manuais e normas tecnicas. Ela assume
+que a cauda da distribuicao decai de forma exponencial — ou seja, eventos
+extremos sao possiveis, mas se tornam rapidamente improvaveis.
+
+Possui apenas **dois parametros**, o que a torna robusta mesmo com
+series curtas. Sua funcao de densidade de probabilidade (PDF):
     """)
     st.latex(
         r"f(x) = \frac{1}{\beta} \exp\!\left[-\frac{x - \mu}{\beta}"
@@ -147,33 +171,42 @@ quantil (inversa da CDF):
         r"P_{TR} = \mu - \beta \cdot \ln\!\left[-\ln\!\left(1 - \frac{1}{TR}\right)\right]"
     )
 
-    # --- 4. Distribuicao GEV ---
-    st.subheader("4. Distribuicao GEV (Generalized Extreme Value)")
-    st.markdown("""
-A distribuicao GEV generaliza a Gumbel ao incluir um parametro de forma
-$\\xi$ (shape) que controla o comportamento da cauda superior:
+    # --- 3.2 GEV completa ---
+    st.subheader("3.2 GEV completa (Generalized Extreme Value)")
+    st.markdown(r"""
+A GEV completa adiciona um terceiro parametro — a **forma** ($\xi$) — que
+permite ao modelo adaptar o formato da cauda aos dados observados,
+em vez de assumir previamente que ela segue o padrao exponencial da Gumbel.
+Sua CDF:
     """)
     st.latex(
         r"F(x) = \exp\!\left\{-\left[1 + \xi\!\left(\frac{x-\mu}{\beta}\right)"
         r"\right]^{-1/\xi}\right\}"
     )
     st.markdown(r"""
-Os tres parametros da GEV:
+Os tres parametros:
 - $\mu$ = **locacao (loc):** mesmo significado da Gumbel — precipitacao
   maxima "tipica". Unidade: mm.
 - $\beta$ = **escala (scale):** variabilidade interanual dos maximos.
   Unidade: mm.
 - $\xi$ = **forma (shape):** controla o peso da cauda superior, ou seja,
-  quao provaveis sao eventos muito acima da media. Na pratica:
-  - $\xi \approx 0$: comportamento similar a Gumbel
-  - $\xi > 0$ (Frechet): chuvas extremas sao mais provaveis do que
-    a Gumbel preve — comum em regioes com eventos convectivos intensos
+  quao provaveis sao eventos muito acima da media. E este parametro que
+  define em qual dos tres tipos a distribuicao se enquadra:
+  - $\xi \approx 0$: a GEV se reduz a Gumbel — a cauda decai
+    exponencialmente
+  - $\xi > 0$ (Frechet): a cauda e mais pesada que a Gumbel, indicando
+    que chuvas extremas sao mais provaveis do que o modelo classico
+    preve — comum em regioes com eventos convectivos intensos
   - $\xi < 0$ (Weibull): existe um limite superior fisico para a
-    precipitacao — menos comum na pratica
+    precipitacao — menos comum na pratica hidrologica
 
-A GEV e mais flexivel que a Gumbel e pode se ajustar melhor quando a
-amostra possui eventos extremos outliers. Porem, requer amostras maiores
-(minimo 20 anos) para estimar $\xi$ com confianca.
+**Quando usar cada modelo?** A Gumbel e mais parcimoniosa (menos
+parametros = menos incerteza) e funciona bem para a maioria das estacoes
+brasileiras, especialmente com series curtas. A GEV e recomendada quando
+ha suspeita de que a cauda se comporta de forma diferente da exponencial
+— tipicamente quando a serie apresenta eventos outliers muito acima
+do padrao ou quando se dispoe de series longas (minimo 20 anos) que
+permitam estimar $\xi$ com confianca.
     """)
 
     # --- 5. Teste de aderencia ---
@@ -508,7 +541,19 @@ if "precipitation_data" not in st.session_state:
             tooltip={"text": "{Code} - {Name}\n{City}, {State}\nPeriodo: {StartDate} - {EndDate}\nAnos: {NYD} | Falhas: {MD}%\nQualidade: {quality_label}"},
             map_style="light",
         )
-        st.pydeck_chart(deck, use_container_width=True, height=550)
+        col_map, col_legend = st.columns([5, 1])
+        with col_map:
+            st.pydeck_chart(deck, use_container_width=True, height=550)
+        with col_legend:
+            st.markdown(
+                '<div style="padding-top:40px; font-size:13px; line-height:2.2;">'
+                '<b>Qualidade</b><br>'
+                '<span style="color:#2ca02c;">&#9679;</span> Excelente<br>'
+                '<span style="color:#ff7f0e;">&#9679;</span> Moderada<br>'
+                '<span style="color:#d62728;">&#9679;</span> Limitada'
+                '</div>',
+                unsafe_allow_html=True,
+            )
 
         st.markdown("**Selecione a estacao** pelo nome, codigo ou cidade:")
 
