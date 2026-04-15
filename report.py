@@ -194,4 +194,4 @@ def generate_pdf(
         "Koutsoyiannis et al. (1998); Weiss (1964)."
     )
 
-    return pdf.output()
+    return bytes(pdf.output())
