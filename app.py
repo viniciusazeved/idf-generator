@@ -471,17 +471,22 @@ if "precipitation_data" not in st.session_state:
 
         map_data = st_folium(
             station_map,
+            key="station_map",
             height=550,
             use_container_width=True,
+            returned_objects=["last_object_clicked"],
         )
 
-        # Resolver clique no mapa
+        # Resolver clique no mapa (so processar clicks novos)
         if map_data and map_data.get("last_object_clicked"):
-            clicked = map_data["last_object_clicked"]
-            station = resolve_clicked_station(scored_catalog, clicked)
-            if station is not None:
-                prev = st.session_state.get("map_selected_station")
-                if prev is None or prev.get("Code") != station.get("Code"):
+            click_coords = (
+                map_data["last_object_clicked"].get("lat"),
+                map_data["last_object_clicked"].get("lng"),
+            )
+            if click_coords != st.session_state.get("_last_click_coords"):
+                st.session_state["_last_click_coords"] = click_coords
+                station = resolve_clicked_station(scored_catalog, map_data["last_object_clicked"])
+                if station is not None:
                     st.session_state["map_selected_station"] = station
 
         # Card de confirmacao
