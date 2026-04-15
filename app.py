@@ -33,6 +33,7 @@ from plots import (
     plot_qq,
 )
 from map_view import compute_quality_score, create_station_map, resolve_clicked_station
+from report import generate_pdf
 from stations import get_cities, get_states, get_stations, load_catalog
 from streamlit_folium import st_folium
 
@@ -113,11 +114,17 @@ precipitacoes maximas anuais. Sua funcao de densidade de probabilidade
     )
     st.markdown(r"""
 Onde:
-- $\mu$ = parametro de locacao (loc) - relacionado a moda da distribuicao
-- $\beta$ = parametro de escala (scale) - controla a dispersao
+- $\mu$ = **locacao (loc):** valor em torno do qual se concentram os
+  maximos anuais. Na pratica, representa a precipitacao maxima diaria
+  "tipica" — aproximadamente a moda da distribuicao. Unidade: mm.
+- $\beta$ = **escala (scale):** mede o quanto os maximos anuais variam
+  de ano para ano. Valores altos indicam grande variabilidade entre
+  os anos (diferenca grande entre anos "secos" e "chuvosos"); valores
+  baixos indicam maximos mais regulares. Unidade: mm.
 
 Os parametros sao estimados pelo **Metodo da Maxima Verossimilhanca**
-(MLE), implementado via `scipy.stats.gumbel_r.fit()`.
+(MLE), que encontra os valores de $\mu$ e $\beta$ que tornam os dados
+observados mais provaveis sob o modelo de Gumbel.
 
 A precipitacao associada a um tempo de retorno $TR$ e obtida pela funcao
 quantil (inversa da CDF):
@@ -137,14 +144,22 @@ $\\xi$ (shape) que controla o comportamento da cauda superior:
         r"\right]^{-1/\xi}\right\}"
     )
     st.markdown(r"""
-Casos especiais:
-- $\xi = 0$: **Gumbel** (Tipo I) - cauda exponencial
-- $\xi > 0$: **Frechet** (Tipo II) - cauda pesada (eventos extremos mais provaveis)
-- $\xi < 0$: **Weibull** (Tipo III) - cauda limitada superiormente
+Os tres parametros da GEV:
+- $\mu$ = **locacao (loc):** mesmo significado da Gumbel — precipitacao
+  maxima "tipica". Unidade: mm.
+- $\beta$ = **escala (scale):** variabilidade interanual dos maximos.
+  Unidade: mm.
+- $\xi$ = **forma (shape):** controla o peso da cauda superior, ou seja,
+  quao provaveis sao eventos muito acima da media. Na pratica:
+  - $\xi \approx 0$: comportamento similar a Gumbel
+  - $\xi > 0$ (Frechet): chuvas extremas sao mais provaveis do que
+    a Gumbel preve — comum em regioes com eventos convectivos intensos
+  - $\xi < 0$ (Weibull): existe um limite superior fisico para a
+    precipitacao — menos comum na pratica
 
 A GEV e mais flexivel que a Gumbel e pode se ajustar melhor quando a
 amostra possui eventos extremos outliers. Porem, requer amostras maiores
-para uma estimacao confiavel do parametro de forma.
+(minimo 20 anos) para estimar $\xi$ com confianca.
     """)
 
     # --- 5. Teste de aderencia ---
@@ -158,21 +173,28 @@ distribuicao teorica ajustada. A estatistica de teste e:
         r"\left[(2i-1)\left(\ln F(x_i) + \ln(1 - F(x_{n+1-i}))\right)\right]"
     )
     st.markdown(r"""
-O teste AD e mais poderoso que o Kolmogorov-Smirnov para detectar
+O teste AD e mais sensivel que o Kolmogorov-Smirnov para detectar
 desvios nas caudas da distribuicao — exatamente onde a modelagem de
 eventos extremos e mais critica.
 
-O **p-value** e calculado via **bootstrap parametrico (Monte Carlo)**,
-o que corrige o vies que ocorre quando os parametros da distribuicao
-sao estimados a partir dos proprios dados (Naghettini & Pinto, 2007).
+**Estatistica AD ($A^2$):** mede a distancia entre a distribuicao
+ajustada e os dados observados. Valores baixos indicam bom ajuste;
+valores altos indicam que o modelo nao descreve bem os dados.
 
-Interpretacao do **p-value**:
-- **p > 0.05:** nao ha evidencia para rejeitar $H_0$ — o ajuste e aceitavel
-- **p < 0.05:** o ajuste pode ser inadequado — considere outra distribuicao
+**p-value (Monte Carlo):** probabilidade de obter uma estatistica AD
+tao grande quanto a observada, assumindo que a distribuicao esta
+correta. E calculado via bootstrap parametrico, o que corrige o vies
+que ocorre quando os parametros sao estimados dos proprios dados
+(Naghettini & Pinto, 2007). Interpretacao:
+- **p > 0.05:** nao ha evidencia para rejeitar o ajuste — a
+  distribuicao e aceitavel para os dados
+- **p < 0.05:** o ajuste pode ser inadequado — considere testar outra
+  distribuicao ou revisar o periodo de dados
 
-O **QQ-Plot** complementa o teste AD de forma visual: pontos proximos da
-reta 1:1 indicam bom ajuste; desvios sistematicos nas caudas indicam
-problemas na modelagem de eventos extremos.
+O **QQ-Plot** complementa o teste de forma visual: se os pontos
+seguem a reta 1:1, o modelo esta representando bem os dados.
+Desvios nas extremidades indicam que o modelo pode subestimar ou
+superestimar os eventos mais raros.
     """)
 
     # --- 6. Fator 1.14 ---
@@ -375,7 +397,20 @@ with col_start:
 with col_end:
     end_year = st.number_input("Ano Final", value=2023, min_value=1900, max_value=2030)
 
-hydro_year = st.sidebar.checkbox("Usar Ano Hidrologico (Out-Set)", value=False)
+hydro_year = st.sidebar.checkbox("Usar Ano Hidrologico", value=False)
+hydro_start_month = 10  # padrao: outubro
+if hydro_year:
+    _month_names = {
+        1: "Janeiro", 2: "Fevereiro", 3: "Marco", 4: "Abril",
+        5: "Maio", 6: "Junho", 7: "Julho", 8: "Agosto",
+        9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro",
+    }
+    hydro_start_month = st.sidebar.selectbox(
+        "Mes inicial do ano hidrologico",
+        options=list(_month_names.keys()),
+        format_func=lambda m: _month_names[m],
+        index=9,  # Outubro (indice 9 na lista 1-12)
+    )
 dist_choice = st.sidebar.radio("Distribuicao", ["Gumbel", "GEV"], index=0)
 tr_values = st.sidebar.multiselect(
     "Tempos de Retorno (anos)",
@@ -437,8 +472,7 @@ if "precipitation_data" not in st.session_state:
         map_data = st_folium(
             station_map,
             height=550,
-            width=None,
-            returned_objects=[],
+            use_container_width=True,
         )
 
         # Resolver clique no mapa
@@ -533,7 +567,7 @@ with tab_analise:
     # ---- Secao 2: Maximos Anuais ----
     st.header("2. Maximos Anuais")
 
-    maxima = compute_annual_maxima(series, start_year, end_year, hydro_year)
+    maxima = compute_annual_maxima(series, start_year, end_year, hydro_year, hydro_start_month)
 
     if len(maxima) < 5:
         st.error(
@@ -551,7 +585,8 @@ with tab_analise:
             "dos parametros. Os resultados devem ser interpretados com cautela."
         )
 
-    st.plotly_chart(plot_annual_maxima(maxima), use_container_width=True)
+    fig_maxima = plot_annual_maxima(maxima)
+    st.plotly_chart(fig_maxima, use_container_width=True)
 
     with st.expander("Tabela de Maximos Anuais"):
         st.dataframe(
@@ -570,11 +605,14 @@ with tab_analise:
     gof_result = gof_test(maxima, fit_result)
     theoretical, sample = qq_data(maxima, fit_result)
 
+    fig_dist = plot_distribution_fit(maxima, fit_result)
+    fig_qq = plot_qq(theoretical, sample)
+
     col_fit1, col_fit2 = st.columns(2)
     with col_fit1:
-        st.plotly_chart(plot_distribution_fit(maxima, fit_result), use_container_width=True)
+        st.plotly_chart(fig_dist, use_container_width=True)
     with col_fit2:
-        st.plotly_chart(plot_qq(theoretical, sample), use_container_width=True)
+        st.plotly_chart(fig_qq, use_container_width=True)
 
     param_cols = st.columns(len(fit_result.params) + 2)
     for i, (name, val) in enumerate(fit_result.params.items()):
@@ -609,7 +647,8 @@ with tab_analise:
 
     idf_table = compute_idf_table(precip_by_tr)
 
-    st.plotly_chart(plot_idf_curves(idf_table), use_container_width=True)
+    fig_idf = plot_idf_curves(idf_table)
+    st.plotly_chart(fig_idf, use_container_width=True)
 
     with st.expander("Tabela IDF completa (intensidade em mm/h)"):
         st.dataframe(
@@ -691,3 +730,32 @@ with tab_analise:
         file_name=f"precipitacao_tr_{station_code}.csv",
         mime="text/csv",
     )
+
+    # Relatorio PDF
+    st.divider()
+    if st.button("Gerar Relatorio PDF", type="secondary"):
+        with st.spinner("Gerando relatorio PDF..."):
+            pdf_bytes = generate_pdf(
+                station_code=station_code,
+                station_name=station_name,
+                station_row=station_row,
+                start_year=start_year,
+                end_year=end_year,
+                hydro_year=hydro_year,
+                hydro_start_month=hydro_start_month,
+                dist_choice=dist_choice,
+                tr_values=sorted(tr_values),
+                fit_result=fit_result,
+                gof_result=gof_result,
+                eq_result=eq_result,
+                fig_maxima=fig_maxima,
+                fig_dist=fig_dist,
+                fig_qq=fig_qq,
+                fig_idf=fig_idf,
+            )
+        st.download_button(
+            "Baixar Relatorio PDF",
+            pdf_bytes,
+            file_name=f"relatorio_idf_{station_code}.pdf",
+            mime="application/pdf",
+        )

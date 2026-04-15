@@ -12,4 +12,6 @@ dependencies = [
     "plotly>=5.18",
     "folium>=0.20.0",
     "streamlit-folium>=0.27.1",
+    "fpdf2>=2.8.7",
+    "kaleido>=1.2.0",
 ]

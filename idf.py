@@ -64,6 +64,7 @@ def compute_annual_maxima(
     start_year: int,
     end_year: int,
     hydrological_year: bool = False,
+    hydro_start_month: int = 10,
 ) -> pd.Series:
     """
     Extrai maximos anuais de precipitacao diaria.
@@ -77,7 +78,10 @@ def compute_annual_maxima(
     end_year : int
         Ano final do periodo de analise.
     hydrological_year : bool
-        Se True, usa ano hidrologico (Out-Set), rotulado pelo ano final.
+        Se True, usa ano hidrologico customizavel.
+    hydro_start_month : int
+        Mes de inicio do ano hidrologico (1-12, padrao 10 = outubro).
+        Meses >= hydro_start_month pertencem ao ano hidrologico seguinte.
 
     Returns
     -------
@@ -88,9 +92,8 @@ def compute_annual_maxima(
     s = s[s > 0]  # remover zeros exatos (dias sem chuva)
 
     if hydrological_year:
-        # Ano hidrologico: Out do ano N-1 a Set do ano N -> rotulo N
         s = s.copy()
-        hydro_year = s.index.year + (s.index.month >= 10).astype(int)
+        hydro_year = s.index.year + (s.index.month >= hydro_start_month).astype(int)
         s.index = hydro_year
         s.index.name = "Ano"
         maxima = s.groupby(level=0).max()
