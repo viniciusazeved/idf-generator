@@ -505,7 +505,7 @@ if "precipitation_data" not in st.session_state:
         deck = pdk.Deck(
             layers=[layer],
             initial_view_state=view,
-            tooltip={"text": "{Code} - {Name}\n{City}, {State}\nAnos: {NYD} | Falhas: {MD}%\nQualidade: {quality_label}"},
+            tooltip={"text": "{Code} - {Name}\n{City}, {State}\nPeriodo: {StartDate} - {EndDate}\nAnos: {NYD} | Falhas: {MD}%\nQualidade: {quality_label}"},
             map_style="light",
         )
         st.pydeck_chart(deck, use_container_width=True, height=550)
@@ -519,7 +519,7 @@ if "precipitation_data" not in st.session_state:
 
         station_labels = {
             f"{row['Code']} - {row['Name']} ({row.get('City', '?')}, {row.get('State', '?')}) "
-            f"[{row.get('NYD', '?')} anos]": idx
+            f"[{row.get('NYD', '?')} anos, {row.get('StartDate', '?')[:4]}-{row.get('EndDate', '?')[:4]}]": idx
             for idx, row in filtered.iterrows()
         }
 
