@@ -35,7 +35,7 @@ from plots import (
 from map_view import compute_quality_score, create_station_map, resolve_clicked_station
 from report import generate_pdf
 from stations import get_cities, get_states, get_stations, load_catalog
-from streamlit_folium import st_folium
+from streamlit_folium import folium_static
 
 # ---------------------------------------------------------------------------
 # Config
@@ -461,41 +461,35 @@ if "precipitation_data" not in st.session_state:
         _render_methodology()
 
     with tab_mapa:
-        st.markdown(
-            "Clique em uma estacao no mapa para seleciona-la, "
-            "ou use a **Busca por Estado/Cidade** no menu lateral."
-        )
-
         scored_catalog = compute_quality_score(catalog)
 
-        @st.fragment
-        def _render_map():
-            station_map = create_station_map(scored_catalog, min_years, len(scored_catalog))
-            map_data = st_folium(
-                station_map,
-                key="station_map",
-                height=550,
-                use_container_width=True,
-                returned_objects=["last_object_clicked"],
-            )
-            # Resolver clique (so clicks novos)
-            if map_data and map_data.get("last_object_clicked"):
-                click_coords = (
-                    map_data["last_object_clicked"].get("lat"),
-                    map_data["last_object_clicked"].get("lng"),
-                )
-                if click_coords != st.session_state.get("_last_click_coords"):
-                    st.session_state["_last_click_coords"] = click_coords
-                    station = resolve_clicked_station(scored_catalog, map_data["last_object_clicked"])
-                    if station is not None:
-                        st.session_state["map_selected_station"] = station
-                        st.rerun(scope="app")
+        # Mapa estatico (interativo no browser, sem reruns no Streamlit)
+        station_map = create_station_map(scored_catalog, min_years, len(scored_catalog))
+        folium_static(station_map, height=550, width=1100)
 
-        _render_map()
+        st.markdown("**Selecione a estacao** pelo nome, codigo ou cidade:")
 
-        # Card de confirmacao (fora do fragment — estavel)
-        if "map_selected_station" in st.session_state:
-            sel = st.session_state["map_selected_station"]
+        # Selectbox pesquisavel com todas as estacoes filtradas
+        filtered = scored_catalog.dropna(subset=["Latitude", "Longitude"])
+        if min_years > 0:
+            filtered = filtered[filtered["NYD"].fillna(0) >= min_years]
+
+        station_labels = {
+            f"{row['Code']} - {row['Name']} ({row.get('City', '?')}, {row.get('State', '?')}) "
+            f"[{row.get('NYD', '?')} anos]": idx
+            for idx, row in filtered.iterrows()
+        }
+
+        selected_label = st.selectbox(
+            "Estacao",
+            options=list(station_labels.keys()),
+            index=None,
+            placeholder="Digite para buscar...",
+            label_visibility="collapsed",
+        )
+
+        if selected_label:
+            sel = filtered.loc[station_labels[selected_label]]
 
             st.success(f"Estacao selecionada: **{sel['Code']} - {sel['Name']}**")
 
@@ -512,7 +506,6 @@ if "precipitation_data" not in st.session_state:
                 try:
                     data = _download_precipitation(sel["Code"])
                     st.session_state["precipitation_data"] = data
-                    del st.session_state["map_selected_station"]
                     st.rerun()
                 except ANAConnectionError as e:
                     st.error(f"Erro de conexao com a ANA: {e}")
