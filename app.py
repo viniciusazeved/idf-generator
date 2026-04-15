@@ -705,7 +705,8 @@ with tab_analise:
         eq_cols[5].metric("RMSE", f"{eq_result.rmse:.2f} mm/h")
         eq_cols[6].metric("MAE", f"{eq_result.mae:.2f} mm/h")
 
-        st.plotly_chart(plot_idf_comparison(idf_table, eq_result), use_container_width=True)
+        fig_comparison = plot_idf_comparison(idf_table, eq_result)
+        st.plotly_chart(fig_comparison, use_container_width=True)
 
         st.code(
             f"i = {eq_result.K:.4f} * TR^{eq_result.a:.4f} / (t + {eq_result.b:.4f})^{eq_result.c:.4f}",
@@ -718,6 +719,7 @@ with tab_analise:
             "Verifique a qualidade dos dados ou tente um periodo diferente."
         )
         eq_result = None
+        fig_comparison = None
 
     # ---- Secao 7: Exportar ----
     st.header("7. Exportar")
@@ -779,10 +781,14 @@ with tab_analise:
                 fit_result=fit_result,
                 gof_result=gof_result,
                 eq_result=eq_result,
+                maxima=maxima,
+                idf_table=idf_table,
+                precip_by_tr=precip_by_tr,
                 fig_maxima=fig_maxima,
                 fig_dist=fig_dist,
                 fig_qq=fig_qq,
                 fig_idf=fig_idf,
+                fig_comparison=fig_comparison if eq_result is not None else None,
             )
         st.download_button(
             "Baixar Relatorio PDF",
