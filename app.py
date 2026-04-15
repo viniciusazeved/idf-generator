@@ -348,7 +348,7 @@ def _download_precipitation(station_code: str) -> pd.Series:
 # ---------------------------------------------------------------------------
 _logo_col1, _logo_col2, _logo_col3 = st.sidebar.columns([1, 2, 1])
 with _logo_col2:
-    st.image("logo_lapla.png", width=215)
+    st.image("logo_lapla.png", use_container_width=True)
 st.sidebar.title("Gerador de Curvas IDF")
 
 # 1. Selecao de estacao
