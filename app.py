@@ -354,7 +354,7 @@ st.sidebar.header("1. Selecao de Estacao")
 
 catalog = load_catalog()
 
-min_years = st.sidebar.slider("Anos minimos de dados", min_value=0, max_value=30, value=10, step=5)
+min_years = st.sidebar.slider("Anos minimos de dados", min_value=0, max_value=100, value=10, step=5)
 
 selected_station_row = None
 load_btn = False
