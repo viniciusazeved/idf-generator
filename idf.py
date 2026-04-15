@@ -11,7 +11,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 from scipy.optimize import curve_fit
-from scipy.stats import genextreme, gumbel_r, kstest
+from scipy.stats import genextreme, goodness_of_fit, gumbel_r
 
 from disaggregation import DURATIONS_MIN, disaggregate_24h, to_intensity
 
@@ -37,8 +37,8 @@ class DistributionFitResult:
 
 
 @dataclass
-class KSTestResult:
-    """Resultado do teste Kolmogorov-Smirnov."""
+class GoFTestResult:
+    """Resultado do teste de aderencia (Anderson-Darling, Monte Carlo)."""
     statistic: float
     p_value: float
 
@@ -118,12 +118,17 @@ def fit_gumbel(annual_maxima: pd.Series) -> DistributionFitResult:
 
 
 def fit_gev(annual_maxima: pd.Series) -> DistributionFitResult:
-    """Ajusta distribuicao GEV (Generalized Extreme Value) aos dados."""
+    """Ajusta distribuicao GEV (Generalized Extreme Value) aos dados.
+
+    Nota: params["xi (shape)"] usa convencao hidrologica (xi = -c do scipy).
+    O atributo ``frozen`` usa o sinal interno do scipy (c = -xi).
+    """
     c, loc, scale = genextreme.fit(annual_maxima.values)
     frozen = genextreme(c=c, loc=loc, scale=scale)
+    # scipy usa c com sinal oposto a convencao hidrologica (xi = -c)
     return DistributionFitResult(
         name="GEV",
-        params={"c (shape)": c, "loc": loc, "scale": scale},
+        params={"\u03be (shape)": -c, "loc": loc, "scale": scale},
         frozen=frozen,
     )
 
@@ -132,10 +137,18 @@ def fit_gev(annual_maxima: pd.Series) -> DistributionFitResult:
 # Teste de aderencia
 # ---------------------------------------------------------------------------
 
-def ks_test(annual_maxima: pd.Series, fit: DistributionFitResult) -> KSTestResult:
-    """Executa teste de Kolmogorov-Smirnov contra a distribuicao ajustada."""
-    stat, p_value = kstest(annual_maxima.values, fit.frozen.cdf)
-    return KSTestResult(statistic=stat, p_value=p_value)
+def gof_test(annual_maxima: pd.Series, fit: DistributionFitResult) -> GoFTestResult:
+    """
+    Executa teste de aderencia Anderson-Darling com bootstrap parametrico.
+
+    Usa Monte Carlo para calcular o p-value corretamente mesmo quando os
+    parametros da distribuicao sao estimados a partir dos proprios dados.
+    """
+    dist = gumbel_r if fit.name == "Gumbel" else genextreme
+    result = goodness_of_fit(
+        dist, annual_maxima.values, statistic="ad", n_mc_samples=500, random_state=42,
+    )
+    return GoFTestResult(statistic=result.statistic, p_value=result.pvalue)
 
 
 def qq_data(
@@ -192,7 +205,7 @@ def compute_idf_table(precip_by_tr: dict[int, float]) -> pd.DataFrame:
     """
     Constroi tabela IDF completa: intensidade (mm/h) por duracao e TR.
 
-    Aplica desagregacao DAEE/CETESB a cada precipitacao de TR.
+    Aplica desagregacao DNAEE a cada precipitacao de TR.
 
     Parameters
     ----------

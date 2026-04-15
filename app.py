@@ -17,8 +17,8 @@ from idf import (
     fit_gev,
     fit_gumbel,
     fit_idf_equation,
+    gof_test,
     idf_equation_predict,
-    ks_test,
     qq_data,
     return_period_precipitation,
 )
@@ -145,22 +145,30 @@ amostra possui eventos extremos outliers. Porem, requer amostras maiores
 para uma estimacao confiavel do parametro de forma.
     """)
 
-    # --- 5. Teste KS ---
-    st.subheader("5. Teste de Aderencia de Kolmogorov-Smirnov")
+    # --- 5. Teste de aderencia ---
+    st.subheader("5. Teste de Aderencia de Anderson-Darling")
     st.markdown("""
-O teste de Kolmogorov-Smirnov (KS) avalia se a amostra provem da
+O teste de Anderson-Darling (AD) avalia se a amostra provem da
 distribuicao teorica ajustada. A estatistica de teste e:
     """)
-    st.latex(r"D_n = \sup_x |F_n(x) - F(x)|")
+    st.latex(
+        r"A^2 = -n - \frac{1}{n}\sum_{i=1}^{n}"
+        r"\left[(2i-1)\left(\ln F(x_i) + \ln(1 - F(x_{n+1-i}))\right)\right]"
+    )
     st.markdown(r"""
-Onde $F_n(x)$ e a funcao de distribuicao empirica e $F(x)$ e a CDF
-teorica. A hipotese nula $H_0$ e que os dados seguem a distribuicao.
+O teste AD e mais poderoso que o Kolmogorov-Smirnov para detectar
+desvios nas caudas da distribuicao — exatamente onde a modelagem de
+eventos extremos e mais critica.
+
+O **p-value** e calculado via **bootstrap parametrico (Monte Carlo)**,
+o que corrige o vies que ocorre quando os parametros da distribuicao
+sao estimados a partir dos proprios dados (Naghettini & Pinto, 2007).
 
 Interpretacao do **p-value**:
 - **p > 0.05:** nao ha evidencia para rejeitar $H_0$ — o ajuste e aceitavel
 - **p < 0.05:** o ajuste pode ser inadequado — considere outra distribuicao
 
-O **QQ-Plot** complementa o teste KS de forma visual: pontos proximos da
+O **QQ-Plot** complementa o teste AD de forma visual: pontos proximos da
 reta 1:1 indicam bom ajuste; desvios sistematicos nas caudas indicam
 problemas na modelagem de eventos extremos.
     """)
@@ -184,15 +192,16 @@ brasileira, adotada pelo DAEE, CETESB e diversos manuais de drenagem.
     """)
 
     # --- 7. Desagregacao ---
-    st.subheader("7. Desagregacao de Chuvas - Tabela DAEE/CETESB (1980)")
+    st.subheader("7. Desagregacao de Chuvas - Tabela Nacional DNAEE")
     st.markdown("""
 A desagregacao permite estimar precipitacoes de curta duracao (5 a
 1440 minutos) a partir da precipitacao maxima diaria, utilizando
 coeficientes empiricos.
 
-A tabela de referencia e a do **DAEE/CETESB (1980)**, publicada no
-*Manual de Drenagem Urbana* da CETESB. A desagregacao segue uma
-**cadeia sequencial** (nao sao fatores independentes):
+A tabela de referencia e a **tabela nacional de desagregacao do antigo
+DNAEE**, reproduzida em CETESB (1980) e diversos manuais brasileiros
+de drenagem. A desagregacao segue uma **cadeia sequencial** (nao sao
+fatores independentes):
     """)
 
     st.markdown("**Etapa 1:** Dia fixo para 24h")
@@ -286,7 +295,10 @@ absoluta dos erros.
     st.subheader("10. Referencias")
     st.markdown("""
 - CETESB. (1980). *Drenagem Urbana - Manual de Projeto*. Sao Paulo: CETESB/ASCETESB.
-- DAEE/CETESB. (1980). *Tabela de coeficientes de desagregacao de chuvas*. Sao Paulo.
+- DNAEE. Tabela nacional de desagregacao de chuvas. Reproduzida em CETESB (1980) e
+  Tucci (2009).
+- Weiss, L. (1964). Ratio of true to fixed-interval maximum rainfall.
+  *Journal of the Hydraulic Division*, 90(1), 77-82.
 - Koutsoyiannis, D., Kozonis, D., & Manetas, A. (1998). A mathematical framework
   for studying rainfall intensity-duration-frequency relationships.
   *Journal of Hydrology*, 206(1-2), 118-135.
@@ -411,7 +423,7 @@ if "precipitation_data" not in st.session_state:
         )
         st.info(
             "Este app gera curvas IDF (Intensidade-Duracao-Frequencia) a partir de dados "
-            "historicos de precipitacao da ANA, usando desagregacao DAEE/CETESB (1980) e "
+            "historicos de precipitacao da ANA, usando desagregacao DNAEE e "
             "ajuste estatistico (Gumbel ou GEV)."
         )
     with tab_metodo:
@@ -477,6 +489,14 @@ with tab_analise:
         )
         st.stop()
 
+    min_recommended = 20 if dist_choice == "GEV" else 15
+    if len(maxima) < min_recommended:
+        st.warning(
+            f"A serie possui {len(maxima)} anos. Para a distribuicao {dist_choice}, "
+            f"recomenda-se no minimo {min_recommended} anos para estimacao confiavel "
+            "dos parametros. Os resultados devem ser interpretados com cautela."
+        )
+
     st.plotly_chart(plot_annual_maxima(maxima), use_container_width=True)
 
     with st.expander("Tabela de Maximos Anuais"):
@@ -493,7 +513,7 @@ with tab_analise:
     else:
         fit_result = fit_gev(maxima)
 
-    ks_result = ks_test(maxima, fit_result)
+    gof_result = gof_test(maxima, fit_result)
     theoretical, sample = qq_data(maxima, fit_result)
 
     col_fit1, col_fit2 = st.columns(2)
@@ -505,12 +525,12 @@ with tab_analise:
     param_cols = st.columns(len(fit_result.params) + 2)
     for i, (name, val) in enumerate(fit_result.params.items()):
         param_cols[i].metric(name, f"{val:.4f}")
-    param_cols[-2].metric("KS statistic", f"{ks_result.statistic:.4f}")
-    param_cols[-1].metric("KS p-value", f"{ks_result.p_value:.4f}")
+    param_cols[-2].metric("AD statistic", f"{gof_result.statistic:.4f}")
+    param_cols[-1].metric("p-value (MC)", f"{gof_result.p_value:.4f}")
 
-    if ks_result.p_value < 0.05:
+    if gof_result.p_value < 0.05:
         st.warning(
-            f"p-value do teste KS = {ks_result.p_value:.4f} (< 0.05). "
+            f"p-value do teste Anderson-Darling = {gof_result.p_value:.4f} (< 0.05). "
             "A distribuicao pode nao ser adequada para estes dados. "
             "Considere testar outra distribuicao ou revisar o periodo."
         )
@@ -521,14 +541,14 @@ with tab_analise:
     precip_by_tr = return_period_precipitation(fit_result, sorted(tr_values))
 
     df_tr = pd.DataFrame(
-        {"TR (anos)": list(precip_by_tr.keys()), "P 24h (mm)": list(precip_by_tr.values())}
+        {"TR (anos)": list(precip_by_tr.keys()), "P max diaria (mm)": list(precip_by_tr.values())}
     )
     st.dataframe(
-        df_tr.style.format({"P 24h (mm)": "{:.1f}"}),
+        df_tr.style.format({"P max diaria (mm)": "{:.1f}"}),
         use_container_width=True,
         hide_index=True,
     )
-    st.caption("Nota: P 24h inclui fator 1.14 (correcao dia fixo -> movel) aplicado na desagregacao.")
+    st.caption("Nota: valores de P max diaria (leitura pluviometrica). O fator 1.14 (correcao dia fixo -> movel) e aplicado na etapa de desagregacao.")
 
     # ---- Secao 5: Curvas IDF ----
     st.header("5. Curvas IDF")
