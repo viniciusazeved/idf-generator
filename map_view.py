@@ -55,7 +55,7 @@ def compute_quality_score(catalog: pd.DataFrame) -> pd.DataFrame:
 
     df["quality_label"] = pd.cut(
         df["quality_score"],
-        bins=[-np.inf, 0.35, 0.65, np.inf],
+        bins=[-np.inf, 0.6, 0.9, np.inf],
         labels=["Limitada", "Moderada", "Excelente"],
     )
 
