@@ -77,6 +77,20 @@ por Carvalho & Braga (2020) e esta disponivel em
 Quando uma estacao possui dados em dois niveis de consistencia (bruto e
 consistido), o app prioriza os **dados consistidos** (nivel 2). Em datas
 onde ambos os niveis existem, o dado consistido substitui o bruto.
+
+**Indicador de qualidade das estacoes:** cada estacao do mapa recebe um
+score composto (0 a 1) baseado em tres criterios:
+
+| Criterio | Peso | Descricao |
+|----------|------|-----------|
+| Anos de dados (NYD) | 50% | Saturacao em 30 anos: estacoes com 30+ anos recebem score maximo |
+| Completude (100 - falhas%) | 30% | Saturacao em 50% de falhas: estacoes com 0% recebem score maximo |
+| Recencia | 20% | Quao recente e o ultimo registro: estacoes ativas recebem score maximo, estacoes paradas ha 20+ anos recebem zero |
+
+O score e classificado em tres faixas:
+- **Excelente** (score >= 0.9): estacoes com longa serie, poucas falhas e dados recentes
+- **Moderada** (0.6 a 0.9): estacoes com dados razoaveis, mas com limitacoes em algum criterio
+- **Limitada** (< 0.6): series curtas, muitas falhas ou dados antigos — usar com cautela
     """)
 
     # --- 2. Maximos anuais ---
