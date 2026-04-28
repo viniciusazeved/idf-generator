@@ -9,7 +9,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from ana_client import ANAConnectionError, fetch_daily_precipitation
+from ana_client import ANAConnectionError, ANAStationTimeoutError, fetch_daily_precipitation
 from idf import (
     IDFEquationResult,
     compute_annual_maxima,
@@ -385,9 +385,41 @@ absoluta dos erros.
 # ---------------------------------------------------------------------------
 # Cache de download
 # ---------------------------------------------------------------------------
-@st.cache_data(show_spinner="Baixando dados da ANA... Isso pode levar 30-60 segundos.")
+@st.cache_data(show_spinner=False)
 def _download_precipitation(station_code: str) -> pd.Series:
-    return fetch_daily_precipitation(station_code)
+    placeholder = st.empty()
+    progress_bar = placeholder.progress(0.0, text="Conectando com a API da ANA...")
+
+    def _format_kb(n: int) -> str:
+        if n < 1024 * 1024:
+            return f"{n / 1024:.1f} KB"
+        return f"{n / (1024 * 1024):.2f} MB"
+
+    def _on_progress(stage: str, current: int, total: int | None) -> None:
+        if stage == "download":
+            if total and total > 0:
+                pct = min(current / total, 1.0)
+                progress_bar.progress(
+                    pct * 0.7,  # download ocupa 70% da barra
+                    text=f"Baixando da ANA: {_format_kb(current)} / {_format_kb(total)} ({pct * 100:.0f}%)",
+                )
+            else:
+                progress_bar.progress(
+                    0.0,
+                    text=f"Baixando da ANA: {_format_kb(current)} (tamanho desconhecido)...",
+                )
+        elif stage == "parse":
+            if total and total > 0:
+                pct = current / total
+                progress_bar.progress(
+                    0.7 + pct * 0.3,  # parse ocupa os 30% restantes
+                    text=f"Processando XML: {current} de {total} meses",
+                )
+
+    try:
+        return fetch_daily_precipitation(station_code, on_progress=_on_progress)
+    finally:
+        placeholder.empty()
 
 
 # ---------------------------------------------------------------------------
@@ -487,6 +519,13 @@ if load_btn and selected_station_row is not None:
         data = _download_precipitation(selected_station_row["Code"])
         st.session_state["precipitation_data"] = data
         st.rerun()
+    except ANAStationTimeoutError as e:
+        st.error(str(e))
+        st.info(
+            "Sugestao: volte a lista e escolha outra estacao da mesma cidade. "
+            "Estacoes com series mais curtas costumam carregar normalmente."
+        )
+        st.stop()
     except ANAConnectionError as e:
         st.error(f"Erro de conexao com a ANA: {e}")
         st.stop()
@@ -595,6 +634,12 @@ if "precipitation_data" not in st.session_state:
                     data = _download_precipitation(sel["Code"])
                     st.session_state["precipitation_data"] = data
                     st.rerun()
+                except ANAStationTimeoutError as e:
+                    st.error(str(e))
+                    st.info(
+                        "Sugestao: escolha outra estacao no mapa. Estacoes com "
+                        "series mais curtas costumam carregar normalmente."
+                    )
                 except ANAConnectionError as e:
                     st.error(f"Erro de conexao com a ANA: {e}")
                 except ValueError as e:
