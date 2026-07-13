@@ -7,6 +7,8 @@ Usa fpdf2 para layout e kaleido (via plotly) para exportar graficos.
 from __future__ import annotations
 
 import tempfile
+from datetime import date
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -14,6 +16,42 @@ import plotly.graph_objects as go
 from fpdf import FPDF
 
 from idf import DistributionFitResult, GoFTestResult, IDFEquationResult
+
+
+# ---------------------------------------------------------------------------
+# Paleta Azevedo (mesma do chuva_vazao / Hidroenergetico)
+# ---------------------------------------------------------------------------
+COLOR_PRIMARY = (22, 66, 91)          # azul-petroleo (titulos, header de tabela)
+COLOR_PRIMARY_SOFT = (219, 231, 237)
+COLOR_ACCENT = (46, 125, 50)          # verde-energia (kicker, subsecoes)
+COLOR_TEXT = (52, 58, 64)             # cinza-grafite do corpo
+COLOR_MUTED = (108, 117, 125)         # legendas, header/footer
+COLOR_RULE = (198, 210, 216)          # linhas divisorias
+COLOR_ROW_ALT = (243, 246, 248)       # zebra de tabelas
+COLOR_CARD_BG = (248, 251, 252)       # fundo do card da capa
+
+PAGE_W = 210
+MARGIN_LR = 10                        # o idf usa margem 10mm (tabelas com larguras fixas)
+USABLE_W = PAGE_W - 2 * MARGIN_LR     # 190 mm
+
+
+# Helvetica core do fpdf2 e Latin-1: mapeia unicode comum antes de imprimir.
+# ² ³ × ° · SAO Latin-1 e passam intactos; so entram aqui os que nao sao.
+_LATIN1_FALLBACK = {
+    "—": "-", "–": "-", "−": "-", "•": "-",
+    "≤": "<=", "≥": ">=", "≈": "~", "→": "->", "…": "...",
+    "“": '"', "”": '"', "‘": "'", "’": "'",
+}
+
+
+def _latin1_safe(text: str) -> str:
+    if not text:
+        return text
+    if not isinstance(text, str):
+        text = str(text)
+    for k, v in _LATIN1_FALLBACK.items():
+        text = text.replace(k, v)
+    return text.encode("latin-1", errors="replace").decode("latin-1")
 
 
 class IDFReport(FPDF):
@@ -28,58 +66,76 @@ class IDFReport(FPDF):
         self.set_auto_page_break(auto=True, margin=20)
 
     def header(self):
-        self.set_font("Helvetica", "B", 9)
-        self.set_text_color(120, 120, 120)
-        self.cell(0, 5, f"Relatorio IDF - Estacao {self.station_code}", align="L")
-        self.cell(0, 5, f"Pagina {self.page_no()}/{{nb}}", align="R", new_x="LMARGIN", new_y="NEXT")
-        self.set_draw_color(200, 200, 200)
-        self.line(10, self.get_y(), 200, self.get_y())
+        # A capa (pag. 1) renderiza o proprio rodape institucional.
+        if self.page_no() == 1:
+            return
+        self.set_font("Helvetica", "", 8)
+        self.set_text_color(*COLOR_MUTED)
+        self.cell(USABLE_W * 0.7, 5,
+                  _latin1_safe(f"Relatorio IDF - Estacao {self.station_code}"), align="L")
+        self.cell(USABLE_W * 0.3, 5,
+                  f"{date.today().strftime('%d/%m/%Y')}  -  pag. {self.page_no()}/{{nb}}",
+                  align="R", new_x="LMARGIN", new_y="NEXT")
+        self.set_draw_color(*COLOR_RULE)
+        self.set_line_width(0.2)
+        self.line(MARGIN_LR, self.get_y(), PAGE_W - MARGIN_LR, self.get_y())
         self.ln(4)
-        self.set_text_color(0, 0, 0)
+        self.set_text_color(*COLOR_TEXT)
 
     def footer(self):
+        if self.page_no() == 1:
+            return
         self.set_y(-12)
         self.set_font("Helvetica", "I", 7)
-        self.set_text_color(150, 150, 150)
-        # Helvetica core do fpdf2 e Latin-1: garante que acentos nao quebrem.
-        rodape = self._identidade["rodape_pdf"].encode("latin-1", "replace").decode("latin-1")
-        self.cell(0, 5, rodape, align="C")
-        self.set_text_color(0, 0, 0)
+        self.set_text_color(*COLOR_MUTED)
+        self.cell(0, 5, _latin1_safe(self._identidade["rodape_pdf"]), align="C")
+        self.set_text_color(*COLOR_TEXT)
 
     def add_title(self, text: str):
         self.set_font("Helvetica", "B", 16)
-        self.cell(0, 12, text, new_x="LMARGIN", new_y="NEXT")
+        self.set_text_color(*COLOR_PRIMARY)
+        self.cell(0, 12, _latin1_safe(text), new_x="LMARGIN", new_y="NEXT")
+        self.set_text_color(*COLOR_TEXT)
         self.ln(2)
 
     def add_section(self, text: str):
-        self.set_font("Helvetica", "B", 12)
-        self.set_text_color(30, 70, 130)
-        self.cell(0, 9, text, new_x="LMARGIN", new_y="NEXT")
-        self.set_text_color(0, 0, 0)
-        self.ln(1)
+        self.ln(2)
+        self.set_font("Helvetica", "B", 14)
+        self.set_text_color(*COLOR_PRIMARY)
+        self.cell(0, 8, _latin1_safe(text), new_x="LMARGIN", new_y="NEXT")
+        # Filete sob o titulo, na cor primaria
+        self.set_draw_color(*COLOR_PRIMARY)
+        self.set_line_width(0.4)
+        y = self.get_y() + 0.5
+        self.line(MARGIN_LR, y, MARGIN_LR + 60, y)
+        self.set_text_color(*COLOR_TEXT)
+        self.ln(4)
 
     def add_subsection(self, text: str):
+        self.ln(1)
         self.set_font("Helvetica", "B", 10)
-        self.set_text_color(60, 60, 60)
-        self.cell(0, 7, text, new_x="LMARGIN", new_y="NEXT")
-        self.set_text_color(0, 0, 0)
+        self.set_text_color(*COLOR_ACCENT)
+        self.cell(0, 7, _latin1_safe(text), new_x="LMARGIN", new_y="NEXT")
+        self.set_text_color(*COLOR_TEXT)
         self.ln(1)
 
     def add_text(self, text: str, size: int = 9):
         self.set_font("Helvetica", "", size)
-        self.multi_cell(0, 5, text)
+        self.set_text_color(*COLOR_TEXT)
+        self.multi_cell(0, 5, _latin1_safe(text))
         self.ln(2)
 
     def add_param(self, name: str, value: str, description: str = ""):
+        self.set_text_color(*COLOR_TEXT)
         self.set_font("Helvetica", "B", 9)
-        self.cell(40, 5, name)
+        self.cell(40, 5, _latin1_safe(name))
         self.set_font("Helvetica", "", 9)
-        self.cell(30, 5, value)
+        self.cell(30, 5, _latin1_safe(value))
         if description:
             self.set_font("Helvetica", "I", 8)
-            self.set_text_color(100, 100, 100)
-            self.cell(0, 5, description)
-            self.set_text_color(0, 0, 0)
+            self.set_text_color(*COLOR_MUTED)
+            self.cell(0, 5, _latin1_safe(description))
+            self.set_text_color(*COLOR_TEXT)
         self.ln(5)
 
     def add_figure(self, fig: go.Figure, width_mm: int = 180, height_mm: int = 100):
@@ -91,32 +147,122 @@ class IDFReport(FPDF):
             self.ln(4)
 
     def add_dataframe(self, df: pd.DataFrame, col_widths: list[int] | None = None):
-        """Renderiza DataFrame como tabela no PDF."""
+        """Renderiza DataFrame como tabela: header azul-petroleo + zebra."""
         cols = list(df.columns)
         n_cols = len(cols)
         if col_widths is None:
-            available = 190
-            col_widths = [available // n_cols] * n_cols
+            col_widths = [USABLE_W // n_cols] * n_cols
 
         # Cabecalho
         self.set_font("Helvetica", "B", 8)
-        self.set_fill_color(230, 235, 245)
+        self.set_fill_color(*COLOR_PRIMARY)
+        self.set_text_color(255, 255, 255)
+        self.set_draw_color(*COLOR_PRIMARY)
+        self.set_line_width(0.2)
         for i, col in enumerate(cols):
-            self.cell(col_widths[i], 6, str(col), border=1, fill=True, align="C")
+            self.cell(col_widths[i], 6, _latin1_safe(str(col)), border=1, fill=True, align="C")
         self.ln()
 
-        # Dados
+        # Dados com zebra
         self.set_font("Helvetica", "", 7)
-        for _, row in df.iterrows():
+        self.set_text_color(*COLOR_TEXT)
+        self.set_draw_color(*COLOR_RULE)
+        for idx, (_, row) in enumerate(df.iterrows()):
+            fill = idx % 2 == 1
+            if fill:
+                self.set_fill_color(*COLOR_ROW_ALT)
             for i, col in enumerate(cols):
                 val = row[col]
-                if isinstance(val, float):
-                    text = f"{val:.2f}"
-                else:
-                    text = str(val)
-                self.cell(col_widths[i], 5, text, border=1, align="C")
+                text = f"{val:.2f}" if isinstance(val, float) else str(val)
+                self.cell(col_widths[i], 5, _latin1_safe(text), border=1, align="C", fill=fill)
             self.ln()
         self.ln(3)
+
+    # ---- Capa (padrao Azevedo) -------------------------------------------
+    def add_cover(self, itens_card: list[str] | None = None):
+        """Capa com logo da marca ativa, kicker, titulo, card e rodape institucional."""
+        self.add_page()
+        self.set_text_color(*COLOR_TEXT)
+
+        logo_path = Path(self._identidade.get("logo_path") or "")
+        if logo_path.is_file():
+            try:
+                from PIL import Image  # noqa: PLC0415
+                with Image.open(logo_path) as im:
+                    aspecto = im.height / im.width if im.width else 1.0
+            except Exception:  # noqa: BLE001
+                aspecto = 1.0
+            logo_w = 56.0 if aspecto < 0.6 else 32.0
+            logo_h = logo_w * aspecto
+            self.image(str(logo_path), x=(PAGE_W - logo_w) / 2, y=24, w=logo_w)
+            self.set_y(24 + logo_h + 8)
+        else:
+            self.ln(40)
+
+        self.set_font("Helvetica", "B", 10)
+        self.set_text_color(*COLOR_ACCENT)
+        self.cell(0, 6, "RELATORIO TECNICO", align="C", new_x="LMARGIN", new_y="NEXT")
+
+        self.ln(2)
+        self.set_font("Helvetica", "B", 22)
+        self.set_text_color(*COLOR_PRIMARY)
+        self.cell(0, 12, "Curvas Intensidade-Duracao-Frequencia",
+                  align="C", new_x="LMARGIN", new_y="NEXT")
+        self.set_font("Helvetica", "", 12)
+        self.set_text_color(*COLOR_TEXT)
+        self.cell(0, 7, _latin1_safe(f"Estacao {self.station_code} - {self.station_name}"),
+                  align="C", new_x="LMARGIN", new_y="NEXT")
+
+        self.ln(8)
+        self.set_draw_color(*COLOR_PRIMARY)
+        self.set_line_width(0.6)
+        self.line(70, self.get_y(), 140, self.get_y())
+        self.ln(10)
+
+        if itens_card:
+            self._cover_card(itens_card)
+
+        # Rodape institucional (auto_page_break off pra nao vazar pra pag. 2)
+        self.set_auto_page_break(auto=False)
+        sub = self._identidade.get("rodape_capa_sub", "")
+        self.set_y(-34 if sub else -30)
+        self.set_font("Helvetica", "B", 9)
+        self.set_text_color(*COLOR_PRIMARY)
+        self.cell(0, 5, _latin1_safe(self._identidade["rodape_capa_titulo"]),
+                  align="C", new_x="LMARGIN", new_y="NEXT")
+        if sub:
+            self.set_font("Helvetica", "", 8)
+            self.set_text_color(*COLOR_MUTED)
+            self.cell(0, 5, _latin1_safe(sub), align="C", new_x="LMARGIN", new_y="NEXT")
+        self.set_font("Helvetica", "I", 8)
+        self.set_text_color(*COLOR_MUTED)
+        self.cell(0, 5, _latin1_safe(
+            f"Gerado por Gerador de Curvas IDF  -  emitido em {date.today().strftime('%d/%m/%Y')}"
+        ), align="C")
+        self.set_text_color(*COLOR_TEXT)
+        self.set_auto_page_break(auto=True, margin=20)
+
+    def _cover_card(self, itens: list[str]):
+        x0 = 35.0
+        w = PAGE_W - 2 * x0
+        line_h = 5.5
+        h = 14 + line_h * len(itens) + 4
+        y0 = self.get_y()
+        self.set_draw_color(*COLOR_RULE)
+        self.set_line_width(0.3)
+        self.set_fill_color(*COLOR_CARD_BG)
+        self.rect(x0, y0, w, h, style="DF")
+        self.set_xy(x0 + 8, y0 + 6)
+        self.set_font("Helvetica", "B", 9)
+        self.set_text_color(*COLOR_ACCENT)
+        self.cell(0, 5, "NESTE RELATORIO", new_x="LMARGIN", new_y="NEXT")
+        self.ln(1)
+        self.set_font("Helvetica", "", 10)
+        self.set_text_color(*COLOR_TEXT)
+        for item in itens:
+            self.set_x(x0 + 8)
+            self.cell(w - 16, line_h, _latin1_safe(f"- {item}"), new_x="LMARGIN", new_y="NEXT")
+        self.set_y(y0 + h + 6)
 
 
 def generate_pdf(
@@ -145,34 +291,20 @@ def generate_pdf(
     pdf = IDFReport(station_code, station_name)
     pdf.alias_nb_pages()
 
-    # ===== CAPA / TITULO =====
-    pdf.add_page()
-    pdf.ln(20)
-    pdf.set_font("Helvetica", "B", 22)
-    pdf.cell(0, 12, "Relatorio Tecnico", align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "B", 18)
-    pdf.cell(0, 10, "Curvas Intensidade-Duracao-Frequencia (IDF)", align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(10)
-    pdf.set_font("Helvetica", "", 12)
-    pdf.cell(0, 8, f"Estacao: {station_code} - {station_name}", align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 8, f"{station_row.get('City', '?')}, {station_row.get('State', '?')}", align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(10)
-    pdf.set_draw_color(30, 70, 130)
-    pdf.set_line_width(0.5)
-    pdf.line(60, pdf.get_y(), 150, pdf.get_y())
-    pdf.ln(10)
-    pdf.set_font("Helvetica", "", 10)
-    pdf.cell(0, 7, f"Periodo de analise: {start_year} - {end_year}", align="C", new_x="LMARGIN", new_y="NEXT")
-
+    # ===== CAPA =====
     ano_tipo = "Ano civil (Janeiro a Dezembro)"
     if hydro_year:
         _meses = {1:"Janeiro",2:"Fevereiro",3:"Marco",4:"Abril",5:"Maio",6:"Junho",
                   7:"Julho",8:"Agosto",9:"Setembro",10:"Outubro",11:"Novembro",12:"Dezembro"}
         end_m = (hydro_start_month - 1) if hydro_start_month > 1 else 12
         ano_tipo = f"Ano hidrologico ({_meses[hydro_start_month]} a {_meses[end_m]})"
-    pdf.cell(0, 7, ano_tipo, align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 7, f"Distribuicao: {dist_choice}", align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 7, f"Tempos de retorno: {', '.join(str(t) for t in tr_values)} anos", align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.add_cover(itens_card=[
+        f"{station_row.get('City', '?')}, {station_row.get('State', '?')}",
+        f"Periodo de analise: {start_year} - {end_year}",
+        ano_tipo,
+        f"Distribuicao: {dist_choice}",
+        f"Tempos de retorno: {', '.join(str(t) for t in tr_values)} anos",
+    ])
 
     # ===== 1. DADOS DA ESTACAO =====
     pdf.add_page()

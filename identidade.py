@@ -24,8 +24,11 @@ ROOT_DIR = Path(__file__).parent
 IDENTIDADE_AZEVEDO: dict[str, str] = {
     "marca": "azevedo",
     "logo_filename": "logo_azevedo.png",
-    # Rodape do PDF (linha central)
+    # Rodape do PDF (linha central das paginas internas)
     "rodape_pdf": "Gerador de Curvas IDF  -  Azevedo Consultoria Ambiental e Energética",
+    # Bloco institucional no rodape da CAPA do PDF
+    "rodape_capa_titulo": "Azevedo — Consultoria Ambiental e Energética",
+    "rodape_capa_sub": "",
     # Creditos na sidebar do app (markdown do st.caption)
     "creditos_sidebar": (
         "**Azevedo** - Consultoria Ambiental e Energética\n\n"
@@ -37,6 +40,8 @@ IDENTIDADE_LAPLA: dict[str, str] = {
     "marca": "lapla",
     "logo_filename": "logo_lapla.png",
     "rodape_pdf": "Gerado por Gerador de Curvas IDF  -  LAPLA - FECFAU/Unicamp",
+    "rodape_capa_titulo": "LAPLA - Laboratorio de Planejamento Ambiental",
+    "rodape_capa_sub": "FECFAU / Unicamp",
     "creditos_sidebar": (
         "**LAPLA** - Laboratorio de Planejamento Ambiental\n\n"
         "FECFAU / Unicamp\n\n"
