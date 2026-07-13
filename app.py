@@ -425,7 +425,11 @@ def _download_precipitation(station_code: str) -> pd.Series:
 # ---------------------------------------------------------------------------
 # Sidebar
 # ---------------------------------------------------------------------------
-st.sidebar.image("logo_lapla.png", use_container_width=True)
+from identidade import identidade_ativa
+
+_IDENTIDADE = identidade_ativa()
+if _IDENTIDADE.get("logo_path"):
+    st.sidebar.image(_IDENTIDADE["logo_path"], use_container_width=True)
 st.sidebar.title("Gerador de Curvas IDF")
 
 # 1. Selecao de estacao
@@ -500,11 +504,7 @@ if not tr_values:
 
 # Creditos
 st.sidebar.divider()
-st.sidebar.caption(
-    "**LAPLA** - Laboratorio de Planejamento Ambiental\n\n"
-    "FECFAU / Unicamp\n\n"
-    "[Repositorio](https://github.com/viniciusazeved/idf-generator)",
-)
+st.sidebar.caption(_IDENTIDADE["creditos_sidebar"])
 
 
 # ---------------------------------------------------------------------------

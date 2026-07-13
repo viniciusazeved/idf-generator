@@ -23,6 +23,8 @@ class IDFReport(FPDF):
         super().__init__(orientation="P", unit="mm", format="A4")
         self.station_code = station_code
         self.station_name = station_name
+        from identidade import identidade_ativa  # noqa: PLC0415
+        self._identidade = identidade_ativa()
         self.set_auto_page_break(auto=True, margin=20)
 
     def header(self):
@@ -39,7 +41,9 @@ class IDFReport(FPDF):
         self.set_y(-12)
         self.set_font("Helvetica", "I", 7)
         self.set_text_color(150, 150, 150)
-        self.cell(0, 5, "Gerado por Gerador de Curvas IDF (github.com/viniciusazeved/idf-generator)", align="C")
+        # Helvetica core do fpdf2 e Latin-1: garante que acentos nao quebrem.
+        rodape = self._identidade["rodape_pdf"].encode("latin-1", "replace").decode("latin-1")
+        self.cell(0, 5, rodape, align="C")
         self.set_text_color(0, 0, 0)
 
     def add_title(self, text: str):
